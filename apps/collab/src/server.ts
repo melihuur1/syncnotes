@@ -60,12 +60,14 @@ export function createCollabServer(
     ticketSecret: config.COLLAB_TICKET_SECRET,
     accessEvents,
     logger,
+    sweepIntervalMs: config.PERMISSION_SWEEP_INTERVAL_MS,
   });
   const reconciler = new DegradedReconcilerExtension({
     prisma,
     tracker,
     isRedisHealthy: () => redis.isHealthy(),
     intervalMs: config.DEGRADED_RECONCILE_INTERVAL_MS,
+    antiEntropyIntervalMs: config.ANTI_ENTROPY_INTERVAL_MS,
     logger,
   });
 

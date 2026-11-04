@@ -27,7 +27,12 @@ describe('access changes on live WebSocket sessions', () => {
   const serverText = (noteId: string) => bodyText(serverDoc(collab, noteId)!);
 
   beforeAll(async () => {
-    collab = await startCollab({ PERMISSION_CACHE_TTL_MS: 400 });
+    // Automatic sweep disabled here so each mechanism (push, per-message TTL, sweep) is
+    // exercised in isolation; the sweep test triggers it explicitly.
+    collab = await startCollab({
+      PERMISSION_CACHE_TTL_MS: 400,
+      PERMISSION_SWEEP_INTERVAL_MS: 3_600_000,
+    });
   });
   afterEach(() => clients.splice(0).forEach((c) => c.destroy()));
   afterAll(async () => {
@@ -75,6 +80,52 @@ describe('access changes on live WebSocket sessions', () => {
     await waitFor(() => e.stateless.some((m) => m.type === 'access.revoked'));
     expect(serverText(note.noteId)).toBe('ok');
     expect(owner.text()).toBe('ok');
+  });
+
+  it('cuts off a silent reader whose revocation event was lost (permission sweep)', async () => {
+    const note = await createNote();
+    const editor = await note.member('EDITOR');
+    const owner = await open(collab, note.noteId, ticket(note.owner, note.noteId));
+    const reader = await open(collab, note.noteId, ticket(editor, note.noteId));
+    owner.type('before');
+    await waitFor(() => reader.text() === 'before');
+
+    // Revoked in Postgres, event lost. The reader never sends a message, so the per-message
+    // check never runs for it — this is the gap the sweep exists for.
+    await db().noteMember.delete({
+      where: { noteId_userId: { noteId: note.noteId, userId: editor.id } },
+    });
+    await sleep(500); // > PERMISSION_CACHE_TTL_MS
+    owner.type(' leaked');
+    await waitFor(() => reader.text() === 'before leaked');
+
+    expect(await collab.accessControl.sweep()).toBe(1);
+    await waitFor(() => reader.stateless.some((m) => m.type === 'access.revoked'));
+    expect(collab.accessControl.connectionsFor(note.noteId, editor.id)).toHaveLength(0);
+
+    owner.type(' secret');
+    await waitFor(() => owner.text() === 'before leaked secret');
+    await sleep(300);
+    expect(reader.text()).toBe('before leaked');
+  });
+
+  it('runs the permission sweep automatically on its interval', async () => {
+    const sweeping = await startCollab({ PERMISSION_SWEEP_INTERVAL_MS: 250 });
+    try {
+      const note = await createNote();
+      const editor = await note.member('EDITOR');
+      const reader = connect(sweeping, note.noteId, ticket(editor, note.noteId));
+      clients.push(reader);
+      await connected(reader);
+      await db().noteMember.delete({
+        where: { noteId_userId: { noteId: note.noteId, userId: editor.id } },
+      });
+      await waitFor(() => reader.stateless.some((m) => m.type === 'access.revoked'), {
+        timeout: 2000,
+      });
+    } finally {
+      await sweeping.destroy();
+    }
   });
 
   const setRole = async (noteId: string, userId: string, role: 'EDITOR' | 'VIEWER') => {

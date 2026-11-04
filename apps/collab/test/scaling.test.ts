@@ -164,6 +164,58 @@ describe('horizontal scaling through Redis', () => {
       expect(bodyText(serverDoc(a, note.noteId)!)).toBe(bodyText(serverDoc(b, note.noteId)!));
     });
 
+    it('converges during an asymmetric partition (only one instance lost Redis) via anti-entropy', async () => {
+      const proxy = TcpProxy.fromRedisUrl(process.env.REDIS_URL!);
+      await proxy.start();
+      proxies.push(proxy);
+      const a = await start({ ANTI_ENTROPY_INTERVAL_MS: 800 }); // direct Redis connection
+      const b = await start({ REDIS_URL: proxy.url, ANTI_ENTROPY_INTERVAL_MS: 800 });
+      await waitFor(() => a.redis.isHealthy() && b.redis.isHealthy());
+      const note = await createNote();
+      const editor = await note.member('EDITOR');
+      const onA = await open(a, note.noteId, async () => ticket(note.owner, note.noteId));
+      const onB = await open(b, note.noteId, async () => ticket(editor, note.noteId));
+      onA.type('base');
+      await waitFor(() => onB.text() === 'base');
+
+      await proxy.cut();
+      await waitFor(() => !b.redis.isHealthy());
+      expect(a.redis.isHealthy()).toBe(true); // A sees no problem at all
+
+      // A's user is idle, so A never stores and never merges — only anti-entropy can help.
+      onB.type(' [from isolated B]');
+      await waitFor(() => onA.text().includes('[from isolated B]'), {
+        timeout: 8000,
+        message: 'healthy instance never picked up edits of the isolated one',
+      });
+      onA.type(' [from A]');
+      await waitFor(() => onB.text().includes('[from A]'), { timeout: 8000 });
+      expect(onA.text()).toBe(onB.text());
+    });
+
+    it('re-opens a document that was closed during the outage and syncs it in real time after recovery', async () => {
+      const { proxy, a, b, note, a1, a2, b1 } = await outageSetup();
+      await proxy.cut();
+      await waitFor(() => !a.redis.isHealthy() && !b.redis.isHealthy());
+
+      // Everyone on instance A leaves → A stores and unloads the document while Redis is down.
+      a1.destroy();
+      a2.destroy();
+      await waitFor(() => !a.server.hocuspocus.documents.has(note.noteId), { timeout: 8000 });
+
+      await proxy.restore();
+      await waitFor(() => a.redis.isHealthy() && b.redis.isHealthy(), { timeout: 8000 });
+
+      const back = await open(a, note.noteId, async () => ticket(note.owner, note.noteId));
+      await waitFor(() => back.text() === b1.text());
+      const sent = Date.now();
+      back.type(' [after reopen]');
+      await waitFor(() => b1.text().includes('[after reopen]'), { timeout: 2000 });
+      expect(Date.now() - sent).toBeLessThan(1000);
+      b1.type(' [reply]');
+      await waitFor(() => back.text().includes('[reply]'), { timeout: 2000 });
+    });
+
     it('still revokes access during the outage (TTL fallback, no Redis event)', async () => {
       const { proxy, a, note, a1, a2 } = await outageSetup();
       await proxy.cut();

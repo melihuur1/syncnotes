@@ -40,6 +40,7 @@ export interface AccessControlOptions {
   ticketSecret: string;
   accessEvents: AccessEventsSubscriber;
   logger: Logger;
+  sweepIntervalMs: number;
 }
 
 /**
@@ -55,13 +56,69 @@ export interface AccessControlOptions {
 export class AccessControlExtension implements Extension {
   extensionName = 'syncnotes-access-control';
   private instance?: Hocuspocus;
+  private sweepTimer?: NodeJS.Timeout;
+  private sweeping = false;
 
   constructor(private readonly options: AccessControlOptions) {}
 
   async onConfigure({ instance }: onConfigurePayload): Promise<void> {
     this.instance = instance;
     this.options.accessEvents.on('event', (event) => this.handleAccessEvent(event));
-    this.options.accessEvents.on('recovered', () => this.options.permissions.invalidateAll());
+    this.options.accessEvents.on('recovered', () => {
+      // Events published while we were disconnected are gone for good: re-check everyone now.
+      this.options.permissions.invalidateAll();
+      void this.sweep();
+    });
+    this.sweepTimer = setInterval(() => void this.sweep(), this.options.sweepIntervalMs);
+    this.sweepTimer.unref();
+  }
+
+  async onDestroy(): Promise<void> {
+    if (this.sweepTimer) clearInterval(this.sweepTimer);
+  }
+
+  /**
+   * Re-authorises every open connection against Postgres (one query per open document).
+   *
+   * `beforeHandleMessage` only runs when a client *sends* something. A connection that stays
+   * silent — a tampered client, or a normal one between awareness renewals — would otherwise
+   * keep *receiving* updates after its access was revoked, whenever the Redis event is lost.
+   * The sweep bounds that window to `sweepIntervalMs` for every connection.
+   */
+  async sweep(): Promise<number> {
+    if (this.sweeping || !this.instance) return 0;
+    this.sweeping = true;
+    let closed = 0;
+    try {
+      for (const [noteId, document] of this.instance.documents) {
+        const connections = document.getConnections();
+        const userIds = [
+          ...new Set(connections.map((c) => contextOf(c)?.user.id).filter(Boolean)),
+        ] as string[];
+        if (userIds.length === 0) continue;
+
+        const roles = await this.options.permissions.refreshMany(noteId, userIds);
+        for (const connection of connections) {
+          const userId = contextOf(connection)?.user.id;
+          if (!userId) continue;
+          const role = roles.get(userId) ?? null;
+          if (role) {
+            this.applyRole(connection, role);
+          } else {
+            send(connection, { type: 'access.revoked' });
+            connection.close(COLLAB_CLOSE.accessRevoked);
+            closed++;
+          }
+        }
+      }
+      if (closed) this.options.logger.info('permission sweep closed connections', { closed });
+    } catch (err) {
+      // Postgres unavailable: keep current permissions (same policy as the per-message check).
+      this.options.logger.warn('permission sweep failed', { error: (err as Error).message });
+    } finally {
+      this.sweeping = false;
+    }
+    return closed;
   }
 
   async onAuthenticate({

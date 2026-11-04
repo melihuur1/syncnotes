@@ -53,6 +53,20 @@ export class PermissionService {
     return lookup;
   }
 
+  /**
+   * Re-reads the roles of several users on one note in a single query and refreshes the cache.
+   * Users without a membership are returned as absent. Throws if Postgres is unreachable.
+   */
+  async refreshMany(noteId: string, userIds: string[]): Promise<Map<string, NoteRole>> {
+    const rows = await this.prisma.noteMember.findMany({
+      where: { noteId, userId: { in: userIds } },
+      select: { userId: true, role: true },
+    });
+    const roles = new Map(rows.map((r) => [r.userId, r.role] as const));
+    for (const userId of userIds) this.set(userId, noteId, roles.get(userId) ?? null);
+    return roles;
+  }
+
   /** Apply a pushed role change without a DB round-trip. */
   set(userId: string, noteId: string, role: NoteRole | null): void {
     this.cache.set(this.key(userId, noteId), { role, fetchedAt: this.now() });

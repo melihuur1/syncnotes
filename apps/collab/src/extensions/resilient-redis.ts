@@ -45,6 +45,7 @@ export interface ResilientRedisOptions {
 export class ResilientRedisExtension extends HocuspocusRedis {
   private hp?: Hocuspocus;
   private readonly deferred = new Set<string>();
+  private readonly pendingUnloads = new Set<string>();
   private wasHealthy = false;
   private everHealthy = false;
   private degradedSince: number | null = null;
@@ -107,7 +108,12 @@ export class ResilientRedisExtension extends HocuspocusRedis {
 
   override async afterUnloadDocument(data: afterUnloadDocumentPayload): Promise<void> {
     this.deferred.delete(data.documentName);
-    if (!this.isHealthy()) return;
+    if (!this.isHealthy()) {
+      // Unsubscribing now would fail and ioredis would re-subscribe on reconnect; the base class
+      // would also keep a reference to the destroyed document. Finish the cleanup on recovery.
+      this.pendingUnloads.add(data.documentName);
+      return;
+    }
     await super.afterUnloadDocument(data);
   }
 
@@ -138,7 +144,9 @@ export class ResilientRedisExtension extends HocuspocusRedis {
       else if (outage > 0)
         this.log.info('redis connected after starting in degraded mode', { waitedMs: outage });
       this.everHealthy = true;
-      if (outage > 0 || this.deferred.size > 0) void this.resyncOpenDocuments();
+      if (outage > 0 || this.deferred.size > 0 || this.pendingUnloads.size > 0) {
+        void this.resyncOpenDocuments();
+      }
     } else if (!healthy && this.wasHealthy) {
       this.wasHealthy = false;
       this.degradedSince = Date.now();
@@ -161,6 +169,17 @@ export class ResilientRedisExtension extends HocuspocusRedis {
 
   private async resyncOpenDocuments(): Promise<void> {
     if (!this.hp) return;
+    const instance = this.hp;
+    for (const documentName of [...this.pendingUnloads]) {
+      this.pendingUnloads.delete(documentName);
+      if (instance.documents.has(documentName)) continue; // re-opened meanwhile
+      await super.afterUnloadDocument({ instance, documentName }).catch((err: Error) =>
+        this.log.warn('deferred unsubscribe failed', {
+          noteId: documentName,
+          error: err.message,
+        }),
+      );
+    }
     for (const [documentName, document] of this.hp.documents) {
       try {
         if (this.deferred.has(documentName)) {
