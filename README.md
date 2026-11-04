@@ -204,4 +204,4 @@ More in [docs/architecture.md § Trade-offs](docs/architecture.md#12-trade-offs-
 
 ## License
 
-MIT
+[MIT](LICENSE) © 2026 Melih Uğur
