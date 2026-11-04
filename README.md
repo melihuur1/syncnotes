@@ -8,9 +8,9 @@ Several people type into the same note at once, see each other's cursors, keep w
 offline and merge cleanly when they reconnect. Permissions are enforced on the server — even on
 WebSocket sessions that are already open.
 
-[![CI](https://github.com/OWNER/syncnotes/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/syncnotes/actions/workflows/ci.yml)
+[![CI](https://github.com/melihuur1/syncnotes/actions/workflows/ci.yml/badge.svg)](https://github.com/melihuur1/syncnotes/actions/workflows/ci.yml)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6)
-![Tests](https://img.shields.io/badge/tests-115%20passing-2ea44f)
+![Tests](https://img.shields.io/badge/tests-119%20passing-2ea44f)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
 <img src="docs/screenshots/editor-light.png" alt="Two users editing the same note, with a remote caret labelled Bob Martin" width="860" />
@@ -25,11 +25,11 @@ WebSocket sessions that are already open.
 | --- | --- |
 | Concurrent edits must never be lost | **Yjs CRDT** for body and title; verified with 3 clients inserting at random positions concurrently |
 | Viewers must not be able to edit — not only in the UI | Viewer WebSocket connections are **read-only on the server**; updates from a tampered client are dropped |
-| Revoked users must lose access on their *open* session | Redis **push** event closes / downgrades live connections instantly + per-message **TTL re-check** as a fallback when the event is lost |
+| Revoked users must lose access on their *open* session | Redis **push** event closes / downgrades live connections instantly; when the event is lost, a per-message **TTL re-check** and a periodic **permission sweep** bound write *and* read access to 5 s |
 | No lost updates across instances | Binary Yjs state persisted with **merge-on-write under a row lock** (`SELECT … FOR UPDATE`) |
 | Work offline, merge later | **IndexedDB replica** (y-indexeddb) + Yjs state-vector sync on reconnect |
 | Same note open on several backend instances | Hocuspocus **Redis fan-out** for updates and presence; 2 instances behind nginx round-robin |
-| Redis outage | Documented **degraded mode**: same-instance editing continues, persistence unaffected, instances converge through Postgres, one-round resync on recovery |
+| Redis outage | Documented **degraded mode**: no edit lost, same-instance editing stays real-time, instances converge through Postgres (anti-entropy also covers asymmetric partitions), one-round resync on recovery — and an honest list of what Redis *is* needed for |
 | Data survives restarts | Graceful shutdown flushes pending stores; restart test in the suite |
 | Secure sessions | HttpOnly cookies, refresh-token **rotation with reuse detection**, double-submit CSRF, Argon2id, lockout, rate limits |
 
@@ -135,7 +135,7 @@ Integration suites use a separate `syncnotes_test` database (created by the Post
 script); run `npm run db:migrate:test` once before the first run. E2E tests reuse the dev
 servers from `npm run dev` locally; CI starts the production builds.
 
-Current totals: **41** API · **36** collab · **5** shared · **26** web unit · **7** E2E.
+Current totals: **41** API · **40** collab · **5** shared · **26** web unit · **7** E2E.
 
 ## REST API
 
@@ -172,7 +172,9 @@ See [`.env.example`](.env.example). Most relevant:
 | `JWT_ACCESS_SECRET` / `COLLAB_TICKET_SECRET` | — | must differ, ≥ 32 chars (validated at boot) |
 | `JWT_ACCESS_TTL_SECONDS` | `900` | access-token lifetime |
 | `COLLAB_TICKET_TTL_SECONDS` | `60` | WebSocket ticket lifetime (max 300) |
-| `PERMISSION_CACHE_TTL_MS` | `5000` | upper bound for revocation latency when Redis events are lost |
+| `PERMISSION_CACHE_TTL_MS` | `5000` | max time a revoked user can still *write* when Redis events are lost |
+| `PERMISSION_SWEEP_INTERVAL_MS` | `5000` | max time a revoked user can still *read* when Redis events are lost |
+| `ANTI_ENTROPY_INTERVAL_MS` | `15000` | Postgres reconciliation while healthy (asymmetric partitions) |
 | `STORE_DEBOUNCE_MS` / `STORE_MAX_DEBOUNCE_MS` | `2000` / `10000` | persistence debounce |
 | `AUTO_VERSION_INTERVAL_MINUTES` | `10` | automatic snapshot interval |
 | `THROTTLE_AUTH_LIMIT` | `10` | credential requests per IP per minute |

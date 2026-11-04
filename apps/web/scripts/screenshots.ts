@@ -71,7 +71,10 @@ async function main() {
     await ada.goto(BASE);
   }
   const url = await typeNote(ada, 'Sprint planning', [
-    '## Agenda', '[ ] Review last sprint', 'Estimate collaboration features', 'Write the Redis outage tests',
+    '## Agenda',
+    '[ ] Review last sprint',
+    'Estimate collaboration features',
+    'Write the Redis outage tests',
   ]);
 
   // Share with Bob and make him type so his caret appears.

@@ -207,7 +207,7 @@ Why a ticket instead of sending the access cookie to the WebSocket server?
 ## 6. Authorisation on a live WebSocket
 
 Checking permissions only at connect time is not enough: the hard case is a user whose access
-changes **while their socket is open**. SyncNotes layers three mechanisms:
+changes **while their socket is open**. SyncNotes layers four mechanisms:
 
 ```mermaid
 flowchart TB
@@ -217,7 +217,8 @@ flowchart TB
   R -->|push, ~ms| C[every collab instance]
   C -->|removed| X[send access.revoked + close document connection]
   C -->|role changed| Y[flip connection.readOnly in place + notify client]
-  C -.->|3. pull: every message re-checks role<br/>cached ≤ PERMISSION_CACHE_TTL_MS| PG
+  C -.->|3. every inbound message re-checks role<br/>cached ≤ PERMISSION_CACHE_TTL_MS| PG
+  C -.->|4. sweep: every open connection re-checked<br/>every PERMISSION_SWEEP_INTERVAL_MS| PG
 ```
 
 1. **Handshake** — the role is read from Postgres; viewers get a read-only connection.
@@ -225,10 +226,20 @@ flowchart TB
    client that ignores the disabled editor still cannot change the document.
 2. **Push** — membership changes are published on Redis; every instance applies them to its
    open connections immediately (close on removal, toggle `readOnly` on role change).
-3. **Pull** — `beforeHandleMessage` re-checks the role on every inbound message through a
-   cache with a short TTL (default 5 s). If the Redis event is lost (Redis down, network
-   blip), revocation still takes effect within the TTL. If Postgres is briefly unreachable the
-   last known role is used; if nothing is known the server fails closed.
+3. **Per-message check** — `beforeHandleMessage` re-checks the role on every inbound message
+   through a cache with a short TTL (default 5 s). A revoked user can therefore not *write*
+   for longer than the TTL, even if the Redis event is lost.
+4. **Sweep** — the per-message check only runs when a client *sends* something. A connection
+   that stays silent (a tampered client, or a normal one between its 15-second presence
+   renewals) would keep *receiving* updates after its access was revoked whenever the event
+   is lost — and Redis Pub/Sub is at-most-once, so events are never replayed after an outage.
+   Every 5 s the server therefore re-reads the memberships of all connected users (one query
+   per open document) and closes or downgrades connections accordingly; it also sweeps
+   immediately when the access-event stream reconnects.
+
+If Postgres is briefly unreachable the last known role is used; if nothing is known the server
+fails closed. **Bound:** with events lost, a revoked user may read for at most
+`PERMISSION_SWEEP_INTERVAL_MS` and write for at most `PERMISSION_CACHE_TTL_MS`.
 
 **A subtle CRDT consequence.** Yjs requires causal delivery. When the server drops an update
 from a client that became read-only, that client's clock now has a gap; everything it sends
@@ -291,22 +302,55 @@ The Docker deployment runs two collaboration instances behind nginx round-robin,
 people editing the same note are usually connected to *different* processes. The Hocuspocus
 Redis extension relays document updates and presence between instances.
 
-What happens when Redis goes down — every row is covered by `apps/collab/test/scaling.test.ts`,
-which places a TCP proxy between the instances and Redis and cuts it:
+Redis is treated as a **latency optimisation, not a source of truth**: Postgres holds every
+committed edit and every membership, so losing Redis can make the system slower, never wrong.
+Tests place a TCP proxy between the instances and Redis and cut it
+(`apps/collab/test/scaling.test.ts`).
 
-| Concern | Behaviour while Redis is unavailable |
-| --- | --- |
-| Users on the **same** instance | Unaffected — real-time collaboration continues. |
-| Users on **different** instances | Converge through Postgres: merge-on-write stores + a degraded-mode reconciler that pulls newer persisted state every 3 s. Latency ≈ store debounce + reconcile interval. |
-| Persistence | Unaffected (Postgres row lock, no Redis lock). |
-| Opening a document | Works; the Redis subscription is deferred. |
-| Access revocation | Enforced within `PERMISSION_CACHE_TTL_MS` by the per-message re-check. |
-| Health | `/health` reports `"redis": "degraded"`. |
-| **Recovery** | Each instance re-announces its state vector for every open document; peers answer with exactly what is missing — one resync round, no unbounded queues. Real-time fan-out resumes (< 1 s in tests). |
+### What still holds while Redis is down
 
-The extension is wrapped (`ResilientRedisExtension`) rather than forked: it disables the lock,
-skips publishes while disconnected (instead of queuing them unboundedly) and never lets a
-document load block on Redis — using only the extension's public hooks.
+| Property | Guarantee | Mechanism |
+| --- | --- | --- |
+| No acknowledged edit is lost | **Yes** | Persistence never touches Redis; merge-on-write under a Postgres row lock. |
+| Users on the **same** instance collaborate in real time | **Yes** | Local WebSocket fan-out is independent of Redis. |
+| Users on **different** instances converge | **Yes, eventually** | Each store merges the persisted state; the reconciler pulls newer state every `DEGRADED_RECONCILE_INTERVAL_MS` (3 s). |
+| Opening a document | **Yes** | Redis subscription deferred until recovery. |
+| Revoked user cannot write | **Yes, within 5 s** | Per-message check with TTL cache. |
+| Revoked user stops receiving | **Yes, within 5 s** | Permission sweep. |
+| Recovery without replaying a backlog | **Yes** | On reconnect each instance re-announces its state vector per open document; peers send exactly the missing updates. Documents closed during the outage are unsubscribed at recovery. |
+
+### What Redis is needed for (not guaranteed during an outage)
+
+| Lost or degraded | Impact | Bound / recovery |
+| --- | --- | --- |
+| **Real-time** sync *across* instances | Collaborators on different instances see each other's edits late. | Typically 2–5 s; worst case while someone types non-stop ≈ `STORE_MAX_DEBOUNCE_MS` (10 s) + reconcile interval (3 s). Real-time resumes < 1 s after recovery. |
+| **Presence** (cursors, avatars) across instances | Remote cursors of users on the other instance disappear or freeze. Presence is ephemeral and never written to Postgres. | Restored on the next awareness update after recovery (cursor move or the 15 s renewal). |
+| **Stateless notifications** across instances (`versions.changed`, "X restored a version") | Users on the other instance are not notified; the restored *content* still arrives via reconciliation, and the history list refreshes on its next fetch. | Not replayed. |
+| **Immediate** revocation / role change | Push events published by the API during the outage are dropped. | Bounded by the sweep and TTL above; never replayed, not needed. |
+| "Saved" indicator meaning | "Saved" means *acknowledged by your instance*, not *visible to users on other instances*. | — |
+
+### Asymmetric partitions
+
+Redis health is observed **locally**. If instance B loses Redis while instance A does not, A
+has no reason to enter degraded mode — and its idle users would never see B's edits (A only
+merges persisted state when it stores something itself). An **anti-entropy pass** therefore
+runs through Postgres every `ANTI_ENTROPY_INTERVAL_MS` (15 s) even while healthy. It reads one
+timestamp per open document and fetches state only for documents another instance has written
+since; applying already-known state is a no-op. Covered by
+*"converges during an asymmetric partition"* in the scaling suite.
+
+### Outside this guarantee
+
+- **Redis and Postgres both down**: edits stay in the clients (memory + IndexedDB) and in the
+  collaboration server's memory; nothing new is persisted until Postgres returns. If a server
+  crashes in that state, its clients re-send their state on reconnect.
+- **A client offline and an instance crash at the same time** only loses edits that existed
+  nowhere else — the same as any system without synchronous replication.
+
+The Redis extension is wrapped (`ResilientRedisExtension`) rather than forked: it disables the
+lock, skips publishes while disconnected (instead of queuing them without bound), never lets a
+document load block on Redis and finishes deferred subscription work on recovery — using only
+the extension's public hooks.
 
 ## 10. Version history
 
@@ -331,6 +375,7 @@ document load block on Redis — using only the extension's public hooks.
 | Concurrent edits never lose updates | `collab/test/collaboration.test.ts` — 3 clients × 40 random-position inserts; replicas, server and DB identical |
 | Viewer cannot modify, enforced server-side | `collab/test/collaboration.test.ts` (raw provider sends updates anyway) + `web/e2e` (UI read-only) |
 | Revoked user's open session stops editing | `collab/test/revocation.test.ts` (push), TTL fallback without event, `web/e2e` revocation |
+| Revoked *silent* reader stops receiving when the event is lost | `collab/test/revocation.test.ts` (permission sweep — demonstrates the gap, then closes it) |
 | Live downgrade / upgrade without reconnect | `collab/test/revocation.test.ts` |
 | Clock-gap safety after rejected updates | `collab/test/revocation.test.ts` |
 | Binary persistence, derived columns | `collab/test/persistence.test.ts` |
@@ -340,6 +385,8 @@ document load block on Redis — using only the extension's public hooks.
 | Offline edits survive closing the tab | `web/e2e` (IndexedDB) |
 | Multi-instance sync of content and presence | `collab/test/scaling.test.ts` |
 | Redis outage behaviour + recovery | `collab/test/scaling.test.ts` (TCP proxy cut/restore) |
+| Asymmetric partition (one instance loses Redis) | `collab/test/scaling.test.ts` (anti-entropy) |
+| Document closed during the outage re-opens and syncs in real time | `collab/test/scaling.test.ts` |
 | Ticket validation (signature, expiry, audience, document, membership) | `collab/test/auth.test.ts`, `api/test/sharing.int-spec.ts` |
 | Auth hardening (cookies, CSRF, lockout, rotation, reuse detection, logout) | `api/test/auth.int-spec.ts`, unit specs |
 | Role hierarchy and 404/403 semantics on REST | `api/test/notes.int-spec.ts`, `api/test/sharing.int-spec.ts` |
