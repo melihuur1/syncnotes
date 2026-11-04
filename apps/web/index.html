@@ -6,16 +6,7 @@
     <meta name="description" content="SyncNotes — real-time collaborative notes" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>SyncNotes</title>
-    <script>
-      // Apply the theme before first paint (no flash of the wrong theme).
-      (function () {
-        try {
-          var stored = localStorage.getItem('syncnotes:theme');
-          var dark = stored === 'dark' || ((!stored || stored === 'system') && matchMedia('(prefers-color-scheme: dark)').matches);
-          document.documentElement.classList.toggle('dark', dark);
-        } catch (e) {}
-      })();
-    </script>
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>

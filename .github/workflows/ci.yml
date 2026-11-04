@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '24'
+  # Shared by integration + e2e jobs (service containers below).
+  DATABASE_URL: postgresql://syncnotes:syncnotes@localhost:5432/syncnotes_test
+  REDIS_URL: redis://localhost:6379
+  JWT_ACCESS_SECRET: ci-only-access-secret-0123456789abcdef0123456789
+  COLLAB_TICKET_SECRET: ci-only-collab-secret-0123456789abcdef012345678
+  THROTTLE_AUTH_LIMIT: '1000'
+  THROTTLE_DEFAULT_LIMIT: '10000'
+
+jobs:
+  quality:
+    name: Lint, typecheck & unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build:packages
+      - run: npm run lint
+      - run: npx prettier --check "apps/**/*.{ts,tsx}" "packages/**/src/**/*.ts"
+      - name: Typecheck
+        run: |
+          npx tsc -p apps/api/tsconfig.json --noEmit
+          npx tsc -p apps/collab/tsconfig.json --noEmit
+          (cd apps/web && npx tsc -b --noEmit)
+      - name: Unit tests
+        run: |
+          npm test -w @syncnotes/shared
+          npm run test:unit -w @syncnotes/api
+          npm run test:unit -w @syncnotes/collab
+          npm test -w @syncnotes/web
+
+  integration:
+    name: Integration tests (Postgres + Redis)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: syncnotes
+          POSTGRES_PASSWORD: syncnotes
+          POSTGRES_DB: syncnotes_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U syncnotes" --health-interval 3s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7.4-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build:packages
+      - run: npm run migrate:deploy -w @syncnotes/db
+      - name: API (Jest + Supertest)
+        run: npm run test:int -w @syncnotes/api
+      - name: Collaboration server (Vitest — concurrency, revocation, scaling, Redis outage)
+        run: npm test -w @syncnotes/collab
+
+  e2e:
+    name: End-to-end (Playwright)
+    runs-on: ubuntu-latest
+    needs: [quality]
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: syncnotes
+          POSTGRES_PASSWORD: syncnotes
+          POSTGRES_DB: syncnotes_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U syncnotes" --health-interval 3s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7.4-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 3s --health-timeout 3s --health-retries 20
+    env:
+      CI: 'true'
+      NODE_ENV: production
+      API_PORT: '4000'
+      COLLAB_PORT: '1234'
+      WEB_ORIGIN: http://localhost:5173
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run migrate:deploy -w @syncnotes/db
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+      - run: npx playwright test
+        working-directory: apps/web
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+          retention-days: 7
+
+  docker:
+    name: Docker images & compose smoke test
+    runs-on: ubuntu-latest
+    needs: [quality]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose build
+      - run: docker compose up -d --wait --wait-timeout 180
+      - name: Smoke test through nginx
+        run: |
+          curl -fsS http://localhost:8080/ | grep -q '<div id="root">'
+          curl -fsS http://localhost:8080/api/health | tee /dev/stderr | grep -q '"redis":"up"'
+      - if: failure()
+        run: docker compose logs --no-color
+      - if: always()
+        run: docker compose down -v

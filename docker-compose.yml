@@ -1,7 +1,25 @@
 name: syncnotes
 
-# `docker compose up --build`               → full stack (web + api + 2× collab + postgres + redis)
-# `docker compose up -d postgres redis`     → infrastructure only, for local development
+# `docker compose up --build`             → full stack on http://localhost:8080
+#                                            (nginx + api + 2× collab + postgres + redis)
+# `docker compose up -d postgres redis`   → infrastructure only, for local development
+#
+# The secrets below are development defaults. Override them (e.g. in a `.env` next to this
+# file or your deployment environment) before exposing the stack anywhere.
+
+x-server-env: &server-env
+  NODE_ENV: production
+  DATABASE_URL: postgresql://syncnotes:syncnotes@postgres:5432/syncnotes
+  REDIS_URL: redis://redis:6379
+  COLLAB_TICKET_SECRET: ${COLLAB_TICKET_SECRET:-compose-dev-collab-ticket-secret-change-me-0001}
+
+x-collab: &collab
+  build: { context: ., target: collab }
+  image: syncnotes/collab:local
+  restart: unless-stopped
+  depends_on:
+    migrate: { condition: service_completed_successfully }
+    redis: { condition: service_healthy }
 
 services:
   postgres:
@@ -33,6 +51,52 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+
+  migrate:
+    build: { context: ., target: migrate }
+    image: syncnotes/migrate:local
+    environment:
+      DATABASE_URL: postgresql://syncnotes:syncnotes@postgres:5432/syncnotes
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: 'no'
+
+  api:
+    build: { context: ., target: api }
+    image: syncnotes/api:local
+    restart: unless-stopped
+    environment:
+      <<: *server-env
+      API_PORT: 4000
+      WEB_ORIGIN: http://localhost:8080
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-compose-dev-access-token-secret-change-me-00001}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  collab-1:
+    <<: *collab
+    environment:
+      <<: *server-env
+      INSTANCE_NAME: collab-1
+
+  collab-2:
+    <<: *collab
+    environment:
+      <<: *server-env
+      INSTANCE_NAME: collab-2
+
+  web:
+    build: { context: ., target: web }
+    image: syncnotes/web:local
+    restart: unless-stopped
+    ports:
+      - '8080:80'
+    depends_on:
+      api: { condition: service_healthy }
+      collab-1: { condition: service_healthy }
+      collab-2: { condition: service_healthy }
 
 volumes:
   pgdata:

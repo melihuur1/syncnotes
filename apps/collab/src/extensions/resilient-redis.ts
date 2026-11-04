@@ -147,12 +147,16 @@ export class ResilientRedisExtension extends HocuspocusRedis {
       !healthy &&
       !this.everHealthy &&
       this.degradedSince === null &&
-      this.pub.status !== 'connecting' &&
-      this.pub.status !== 'wait'
+      this.connectionFailed()
     ) {
-      // Booted while Redis is unreachable.
+      // Booted while Redis is unreachable (a connection attempt has already failed).
       this.degradedSince = Date.now();
     }
+  }
+
+  private connectionFailed(): boolean {
+    const failed = ['reconnecting', 'close', 'end'];
+    return failed.includes(this.pub.status) || failed.includes(this.sub.status);
   }
 
   private async resyncOpenDocuments(): Promise<void> {

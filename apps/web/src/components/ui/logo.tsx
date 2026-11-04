@@ -1,14 +1,18 @@
+import { useId } from 'react';
+
 export function Logo({ compact = false }: { compact?: boolean }) {
+  // Unique per instance: duplicate SVG ids break the gradient when one copy is display:none.
+  const gradientId = useId();
   return (
     <span className="inline-flex items-center gap-2.5">
       <svg viewBox="0 0 32 32" className="size-7 shrink-0" aria-hidden>
         <defs>
-          <linearGradient id="sn-logo" x1="0" y1="0" x2="1" y2="1">
+          <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
             <stop offset="0" stopColor="#6366f1" />
             <stop offset="1" stopColor="#8b5cf6" />
           </linearGradient>
         </defs>
-        <rect width="32" height="32" rx="8" fill="url(#sn-logo)" />
+        <rect width="32" height="32" rx="8" fill={`url(#${gradientId})`} />
         <path
           d="M9 11.5h14M9 16h9M9 20.5h11"
           stroke="#fff"

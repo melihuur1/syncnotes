@@ -118,12 +118,10 @@ describe('Auth (integration)', () => {
         .expect(429);
 
       // Lock expires → login works again and the counter resets.
-      await app
-        .get(PrismaService)
-        .db.user.update({
-          where: { id: ada.user.id },
-          data: { lockedUntil: new Date(Date.now() - 1000) },
-        });
+      await app.get(PrismaService).db.user.update({
+        where: { id: ada.user.id },
+        data: { lockedUntil: new Date(Date.now() - 1000) },
+      });
       await client
         .post('/api/auth/login', { email: ada.user.email, password: PASSWORD })
         .expect(200);
