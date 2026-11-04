@@ -25,9 +25,9 @@ async function typeNote(page: Page, title: string, lines: string[]) {
   await page.waitForURL(/\/notes\//);
   await page.getByTestId('note-title').fill(title);
   await page.getByTestId('editor').click();
-  for (const line of lines) {
+  for (const [i, line] of lines.entries()) {
     await page.keyboard.type(line);
-    await page.keyboard.press('Enter');
+    if (i < lines.length - 1) await page.keyboard.press('Enter');
   }
   return page.url();
 }
@@ -71,9 +71,7 @@ async function main() {
     await ada.goto(BASE);
   }
   const url = await typeNote(ada, 'Sprint planning', [
-    '## Agenda',
-    '[ ] Review last sprint',
-    '[ ] Estimate collaboration features',
+    '## Agenda', '[ ] Review last sprint', 'Estimate collaboration features', 'Write the Redis outage tests',
   ]);
 
   // Share with Bob and make him type so his caret appears.
@@ -88,8 +86,9 @@ async function main() {
   await bob.getByTestId('connection-status').filter({ hasText: 'Saved' }).waitFor();
   await bob.getByTestId('editor').click();
   await bob.keyboard.press('Control+End');
-  await bob.keyboard.type('Bob: I can take the Redis outage tests.');
-  await ada.waitForTimeout(1500);
+  await bob.keyboard.press('Enter');
+  await bob.keyboard.type('Pair-review the offline sync flow');
+  await ada.waitForTimeout(4500); // let toasts fade out
   await ada.screenshot({ path: path.join(OUT, 'editor-light.png') });
   await bob.screenshot({ path: path.join(OUT, 'editor-dark.png') });
 
