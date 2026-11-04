@@ -1,0 +1,52 @@
+{
+  "name": "syncnotes",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Real-time collaborative notes platform (Yjs CRDT + Hocuspocus + NestJS)",
+  "license": "MIT",
+  "workspaces": [
+    "packages/shared",
+    "packages/db",
+    "apps/api",
+    "apps/collab",
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "infra:up": "docker compose up -d postgres redis",
+    "infra:down": "docker compose stop postgres redis",
+    "db:generate": "npm run generate -w @syncnotes/db",
+    "db:migrate": "npm run migrate:deploy -w @syncnotes/db",
+    "db:migrate:test": "npm run migrate:test -w @syncnotes/db",
+    "build:packages": "npm run build -w @syncnotes/shared && npm run build -w @syncnotes/db",
+    "build": "npm run build:packages && npm run build -w @syncnotes/api && npm run build -w @syncnotes/collab && npm run build -w @syncnotes/web",
+    "dev": "npm run build:packages && concurrently -k -n api,collab,web -c blue,magenta,green \"npm run dev -w @syncnotes/api\" \"npm run dev -w @syncnotes/collab\" \"npm run dev -w @syncnotes/web\"",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "npm run test --workspaces --if-present",
+    "test:api": "npm run test -w @syncnotes/api",
+    "test:collab": "npm run test -w @syncnotes/collab",
+    "test:web": "npm run test -w @syncnotes/web",
+    "test:e2e": "npm run test:e2e -w @syncnotes/web"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "concurrently": "^9.2.1",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^16.5.0",
+    "prettier": "^3.6.2",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.46.2"
+  },
+  "allowScripts": {
+    "argon2": true,
+    "prisma": true,
+    "@prisma/engines": true,
+    "esbuild": true,
+    "@parcel/watcher": true
+  }
+}

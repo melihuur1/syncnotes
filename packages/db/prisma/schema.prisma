@@ -1,0 +1,142 @@
+// SyncNotes data model.
+//
+// Design notes
+// - A note's collaborative content lives in `notes.ydoc_state` as a Yjs binary update
+//   (Y.encodeStateAsUpdate). `title`, `excerpt` and `plain_text` are *derived* projections
+//   written by the collaboration server so the REST API can list/search without decoding CRDTs.
+// - Access control is a membership table with exactly one OWNER per note
+//   (enforced by a partial unique index in the migration, not only in code).
+// - Folders are personal: a shared note can sit in a different folder for every member,
+//   so the folder reference lives on the membership row.
+// - Refresh tokens are opaque, stored only as SHA-256 hashes, rotated on every use and grouped
+//   into families so that reuse of a rotated token revokes the whole family.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum NoteRole {
+  OWNER
+  EDITOR
+  VIEWER
+}
+
+enum VersionKind {
+  MANUAL
+  AUTO
+  RESTORE
+}
+
+model User {
+  id               String    @id @default(uuid()) @db.Uuid
+  email            String    @unique
+  name             String
+  passwordHash     String    @map("password_hash")
+  failedLoginCount Int       @default(0) @map("failed_login_count")
+  lockedUntil      DateTime? @map("locked_until")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  sessions     Session[]
+  folders      Folder[]
+  memberships  NoteMember[]  @relation("MemberUser")
+  invitations  NoteMember[]  @relation("MemberInviter")
+  createdNotes Note[]        @relation("NoteCreator")
+  versions     NoteVersion[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  familyId  String    @map("family_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  rotatedAt DateTime? @map("rotated_at")
+  revokedAt DateTime? @map("revoked_at")
+  userAgent String?   @map("user_agent")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("sessions")
+}
+
+model Folder {
+  id        String   @id @default(uuid()) @db.Uuid
+  ownerId   String   @map("owner_id") @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  owner   User         @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  entries NoteMember[]
+
+  @@unique([ownerId, name])
+  @@map("folders")
+}
+
+model Note {
+  id               String    @id @default(uuid()) @db.Uuid
+  title            String    @default("Untitled")
+  excerpt          String    @default("")
+  plainText        String    @default("") @map("plain_text")
+  ydocState        Bytes?    @map("ydoc_state")
+  createdById      String    @map("created_by_id") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  contentUpdatedAt DateTime? @map("content_updated_at")
+
+  createdBy User          @relation("NoteCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  members   NoteMember[]
+  versions  NoteVersion[]
+
+  @@index([updatedAt(sort: Desc)], map: "notes_updated_at_idx")
+  @@map("notes")
+}
+
+model NoteMember {
+  noteId      String   @map("note_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  role        NoteRole
+  folderId    String?  @map("folder_id") @db.Uuid
+  invitedById String?  @map("invited_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  note      Note    @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  user      User    @relation("MemberUser", fields: [userId], references: [id], onDelete: Cascade)
+  invitedBy User?   @relation("MemberInviter", fields: [invitedById], references: [id], onDelete: SetNull)
+  folder    Folder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  @@id([noteId, userId])
+  @@index([userId])
+  @@index([folderId])
+  @@map("note_members")
+}
+
+model NoteVersion {
+  id          String      @id @default(uuid()) @db.Uuid
+  noteId      String      @map("note_id") @db.Uuid
+  kind        VersionKind @default(MANUAL)
+  label       String?
+  state       Bytes
+  sizeBytes   Int         @map("size_bytes")
+  createdById String?     @map("created_by_id") @db.Uuid
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  note      Note  @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([noteId, createdAt])
+  @@map("note_versions")
+}
