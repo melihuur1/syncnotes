@@ -98,7 +98,6 @@ jobs:
           --health-cmd "redis-cli ping" --health-interval 3s --health-timeout 3s --health-retries 20
     env:
       CI: 'true'
-      NODE_ENV: production
       API_PORT: '4000'
       COLLAB_PORT: '1234'
       WEB_ORIGIN: http://localhost:5173
