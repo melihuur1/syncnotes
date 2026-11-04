@@ -81,7 +81,10 @@ export class AuthService {
     return { user: toPublicUser(user), tokens: await this.startSession(user, meta) };
   }
 
-  async login(dto: LoginDto, meta: SessionMeta): Promise<{ user: PublicUser; tokens: SessionTokens }> {
+  async login(
+    dto: LoginDto,
+    meta: SessionMeta,
+  ): Promise<{ user: PublicUser; tokens: SessionTokens }> {
     const user = await this.prisma.db.user.findUnique({ where: { email: dto.email } });
     if (!user) {
       await this.passwords.verifyDummy(dto.password);

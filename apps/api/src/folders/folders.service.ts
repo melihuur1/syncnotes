@@ -24,7 +24,12 @@ export class FoldersService {
   async create(userId: string, name: string): Promise<FolderDto> {
     try {
       const folder = await this.prisma.db.folder.create({ data: { ownerId: userId, name } });
-      return { id: folder.id, name: folder.name, noteCount: 0, createdAt: folder.createdAt.toISOString() };
+      return {
+        id: folder.id,
+        name: folder.name,
+        noteCount: 0,
+        createdAt: folder.createdAt.toISOString(),
+      };
     } catch (err) {
       if ((err as { code?: string }).code === 'P2002') {
         throw new ConflictException('A folder with this name already exists');

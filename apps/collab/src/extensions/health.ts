@@ -5,7 +5,11 @@ export class HealthExtension implements Extension {
   extensionName = 'syncnotes-health';
 
   constructor(
-    private readonly deps: { instanceName: string; isRedisHealthy: () => boolean; startedAt: number },
+    private readonly deps: {
+      instanceName: string;
+      isRedisHealthy: () => boolean;
+      startedAt: number;
+    },
   ) {}
 
   async onRequest({ request, response, instance }: onRequestPayload): Promise<void> {

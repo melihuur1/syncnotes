@@ -21,7 +21,12 @@ export class VersionService {
     private readonly autoKeep: number,
   ) {}
 
-  async createSnapshot(noteId: string, document: Y.Doc, options: SnapshotOptions, db: Db = this.prisma) {
+  async createSnapshot(
+    noteId: string,
+    document: Y.Doc,
+    options: SnapshotOptions,
+    db: Db = this.prisma,
+  ) {
     const state = new Uint8Array(encodeContentSnapshot(document));
     const version = await db.noteVersion.create({
       data: {

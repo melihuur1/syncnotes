@@ -27,7 +27,12 @@ function collectLines(node: Y.XmlFragment | Y.XmlElement, out: string[]): void {
 }
 
 export function extractTitle(doc: Y.Doc): string {
-  return doc.getText(YDOC_FIELDS.title).toString().replace(/\s+/g, ' ').trim().slice(0, MAX_TITLE_LENGTH);
+  return doc
+    .getText(YDOC_FIELDS.title)
+    .toString()
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_TITLE_LENGTH);
 }
 
 export function extractPlainText(doc: Y.Doc): string {
@@ -48,9 +53,10 @@ export function encodeContentSnapshot(source: Y.Doc): Uint8Array {
   const snapshot = new Y.Doc();
   snapshot.transact(() => {
     const body = source.getXmlFragment(YDOC_FIELDS.content).toArray();
-    snapshot
-      .getXmlFragment(YDOC_FIELDS.content)
-      .insert(0, body.map((node) => (node as Y.XmlElement | Y.XmlText).clone()));
+    snapshot.getXmlFragment(YDOC_FIELDS.content).insert(
+      0,
+      body.map((node) => (node as Y.XmlElement | Y.XmlText).clone()),
+    );
     snapshot.getText(YDOC_FIELDS.title).insert(0, source.getText(YDOC_FIELDS.title).toString());
   });
   const update = Y.encodeStateAsUpdate(snapshot);
@@ -63,7 +69,11 @@ export function encodeContentSnapshot(source: Y.Doc): Uint8Array {
  * CRDT edit (delete current + insert copy). Unlike overwriting the stored state, this propagates
  * to every connected and offline replica through normal Yjs sync.
  */
-export function applyContentReplacement(target: Y.Doc, snapshotUpdate: Uint8Array, origin: unknown): void {
+export function applyContentReplacement(
+  target: Y.Doc,
+  snapshotUpdate: Uint8Array,
+  origin: unknown,
+): void {
   const source = new Y.Doc();
   Y.applyUpdate(source, snapshotUpdate);
   target.transact(() => {

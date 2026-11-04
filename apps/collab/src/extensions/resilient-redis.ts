@@ -46,6 +46,7 @@ export class ResilientRedisExtension extends HocuspocusRedis {
   private hp?: Hocuspocus;
   private readonly deferred = new Set<string>();
   private wasHealthy = false;
+  private everHealthy = false;
   private degradedSince: number | null = null;
   private readonly log: Logger;
 
@@ -88,7 +89,9 @@ export class ResilientRedisExtension extends HocuspocusRedis {
   override async afterLoadDocument(data: afterLoadDocumentPayload): Promise<void> {
     if (!this.isHealthy()) {
       this.deferred.add(data.documentName);
-      this.log.warn('redis unavailable: document loaded in degraded mode', { noteId: data.documentName });
+      this.log.warn('redis unavailable: document loaded in degraded mode', {
+        noteId: data.documentName,
+      });
       return;
     }
     try {
@@ -128,17 +131,26 @@ export class ResilientRedisExtension extends HocuspocusRedis {
     const healthy = this.isHealthy();
     if (healthy && !this.wasHealthy) {
       const outage = this.degradedForMs;
-      this.degradedSince = null;
       this.wasHealthy = true;
-      if (outage > 0) {
+      this.degradedSince = null;
+      if (this.everHealthy)
         this.log.info('redis recovered: resynchronising open documents', { outageMs: outage });
-        void this.resyncOpenDocuments();
-      }
+      else if (outage > 0)
+        this.log.info('redis connected after starting in degraded mode', { waitedMs: outage });
+      this.everHealthy = true;
+      if (outage > 0 || this.deferred.size > 0) void this.resyncOpenDocuments();
     } else if (!healthy && this.wasHealthy) {
       this.wasHealthy = false;
       this.degradedSince = Date.now();
       this.log.warn('redis connection lost: entering degraded mode');
-    } else if (!healthy && this.degradedSince === null) {
+    } else if (
+      !healthy &&
+      !this.everHealthy &&
+      this.degradedSince === null &&
+      this.pub.status !== 'connecting' &&
+      this.pub.status !== 'wait'
+    ) {
+      // Booted while Redis is unreachable.
       this.degradedSince = Date.now();
     }
   }

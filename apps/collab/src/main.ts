@@ -4,7 +4,10 @@ import { createCollabServer } from './server';
 
 async function main(): Promise<void> {
   const config = loadCollabConfig();
-  const logger = createLogger(config.INSTANCE_NAME, config.NODE_ENV === 'production' ? 'info' : 'debug');
+  const logger = createLogger(
+    config.INSTANCE_NAME,
+    config.NODE_ENV === 'production' ? 'info' : 'debug',
+  );
   const collab = createCollabServer(config, { logger });
   await collab.listen();
 

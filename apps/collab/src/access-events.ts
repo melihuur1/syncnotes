@@ -19,7 +19,10 @@ export class AccessEventsSubscriber extends EventEmitter<AccessEventsSubscriberE
   private wasConnected = false;
   private down = false;
 
-  constructor(redisUrl: string, private readonly logger: Logger) {
+  constructor(
+    redisUrl: string,
+    private readonly logger: Logger,
+  ) {
     super();
     this.client = new Redis(redisUrl, {
       maxRetriesPerRequest: null,

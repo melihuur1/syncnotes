@@ -16,7 +16,11 @@ export function contextOf(connection: Connection): CollabContext | undefined {
 /** Transaction origins used for server-side writes to a live document. */
 export const ORIGINS = {
   /** State merged in from Postgres while persisting — already stored, so skip store hooks. */
-  persistenceMerge: { source: 'local', skipStoreHooks: true, context: { reason: 'persistence-merge' } },
+  persistenceMerge: {
+    source: 'local',
+    skipStoreHooks: true,
+    context: { reason: 'persistence-merge' },
+  },
   /** State pulled from Postgres by the degraded-mode reconciler. */
   reconcile: { source: 'local', skipStoreHooks: true, context: { reason: 'reconcile' } },
   /** Restoring a version is a real edit: it must be stored and broadcast. */

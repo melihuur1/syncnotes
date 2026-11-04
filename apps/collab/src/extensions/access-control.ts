@@ -89,7 +89,10 @@ export class AccessControlExtension implements Extension {
     return { user: { id: claims.sub, name: claims.name }, noteId: documentName, role };
   }
 
-  async beforeHandleMessage({ connection, documentName }: beforeHandleMessagePayload): Promise<void> {
+  async beforeHandleMessage({
+    connection,
+    documentName,
+  }: beforeHandleMessagePayload): Promise<void> {
     const ctx = contextOf(connection);
     if (!ctx) throw new CollabAccessError('unauthenticated');
 
@@ -127,7 +130,11 @@ export class AccessControlExtension implements Extension {
         for (const connection of this.connectionsFor(event.noteId, event.userId)) {
           this.applyRole(connection, event.role);
         }
-        logger.info('role changed', { noteId: event.noteId, userId: event.userId, role: event.role });
+        logger.info('role changed', {
+          noteId: event.noteId,
+          userId: event.userId,
+          role: event.role,
+        });
         break;
       }
       case 'note.deleted': {

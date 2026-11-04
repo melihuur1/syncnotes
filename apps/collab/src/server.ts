@@ -35,9 +35,13 @@ export interface CreateCollabServerOptions {
  * sequence (Hocuspocus sorts by `priority`, then by registration order):
  * access control → persistence → versions → redis fan-out → degraded reconciler → health.
  */
-export function createCollabServer(config: CollabConfig, options: CreateCollabServerOptions = {}): CollabServer {
+export function createCollabServer(
+  config: CollabConfig,
+  options: CreateCollabServerOptions = {},
+): CollabServer {
   const logger =
-    options.logger ?? createLogger(config.INSTANCE_NAME, config.NODE_ENV === 'production' ? 'info' : 'debug');
+    options.logger ??
+    createLogger(config.INSTANCE_NAME, config.NODE_ENV === 'production' ? 'info' : 'debug');
   const ownsPrisma = !options.prisma;
   const prisma = options.prisma ?? createPrismaClient(config.DATABASE_URL);
 

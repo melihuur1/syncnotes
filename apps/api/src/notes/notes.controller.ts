@@ -43,7 +43,10 @@ export class NotesController {
   ) {}
 
   @Get()
-  list(@CurrentUser() user: AuthUser, @Query() query: ListNotesQueryDto): Promise<NoteSummaryDto[]> {
+  list(
+    @CurrentUser() user: AuthUser,
+    @Query() query: ListNotesQueryDto,
+  ): Promise<NoteSummaryDto[]> {
     return this.notes.list(user.id, query);
   }
 

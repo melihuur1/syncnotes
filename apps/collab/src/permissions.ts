@@ -27,7 +27,11 @@ export class PermissionService {
     private readonly now: () => number = Date.now,
   ) {}
 
-  async getRole(userId: string, noteId: string, options: { fresh?: boolean } = {}): Promise<NoteRole | null> {
+  async getRole(
+    userId: string,
+    noteId: string,
+    options: { fresh?: boolean } = {},
+  ): Promise<NoteRole | null> {
     const key = this.key(userId, noteId);
     const cached = this.cache.get(key);
     if (!options.fresh && cached && this.now() - cached.fetchedAt < this.ttlMs) return cached.role;

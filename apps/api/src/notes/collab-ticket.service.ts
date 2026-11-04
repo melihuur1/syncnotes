@@ -26,7 +26,11 @@ export class CollabTicketService {
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
-  async issue(user: { id: string; name: string }, noteId: string, role: NoteRole): Promise<CollabTicketDto> {
+  async issue(
+    user: { id: string; name: string },
+    noteId: string,
+    role: NoteRole,
+  ): Promise<CollabTicketDto> {
     const claims: CollabTicketClaims = { sub: user.id, nid: noteId, name: user.name };
     const token = await this.jwt.signAsync(claims, {
       secret: this.config.COLLAB_TICKET_SECRET,

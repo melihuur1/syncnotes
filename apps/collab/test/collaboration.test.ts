@@ -38,7 +38,9 @@ describe('concurrent editing & read-only enforcement', () => {
   it('loses no update when several users type into the same paragraph at once', async () => {
     const note = await createNote();
     const users = [note.owner, await note.member('EDITOR', 'A'), await note.member('EDITOR', 'B')];
-    const [first, ...rest] = await Promise.all(users.map((u) => open(collab, note.noteId, ticket(u, note.noteId), u)));
+    const [first, ...rest] = await Promise.all(
+      users.map((u) => open(collab, note.noteId, ticket(u, note.noteId), u)),
+    );
     const all = [first!, ...rest];
 
     // Shared starting point: one paragraph everybody edits.
@@ -58,7 +60,9 @@ describe('concurrent editing & read-only enforcement', () => {
       }),
     );
 
-    await waitFor(() => new Set(all.map((c) => c.text())).size === 1, { message: 'replicas did not converge' });
+    await waitFor(() => new Set(all.map((c) => c.text())).size === 1, {
+      message: 'replicas did not converge',
+    });
     const final = first!.text();
     for (const tag of tags) expect(final.split(tag).length - 1).toBe(rounds);
     expect(final).toHaveLength(rounds * tags.length + 1);

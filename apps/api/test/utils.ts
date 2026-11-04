@@ -46,7 +46,8 @@ export class TestClient {
     const client = await TestClient.create(app);
     const email = `${name.toLowerCase()}-${Math.random().toString(36).slice(2, 8)}@example.com`;
     const res = await client.post('/api/auth/register', { email, name, password: PASSWORD });
-    if (res.status !== 201) throw new Error(`register failed: ${res.status} ${JSON.stringify(res.body)}`);
+    if (res.status !== 201)
+      throw new Error(`register failed: ${res.status} ${JSON.stringify(res.body)}`);
     client.user = res.body.user;
     return client;
   }
@@ -56,11 +57,17 @@ export class TestClient {
   }
 
   post(url: string, body?: object) {
-    return this.agent.post(url).set(CSRF_HEADER, this.csrf).send(body ?? {});
+    return this.agent
+      .post(url)
+      .set(CSRF_HEADER, this.csrf)
+      .send(body ?? {});
   }
 
   patch(url: string, body?: object) {
-    return this.agent.patch(url).set(CSRF_HEADER, this.csrf).send(body ?? {});
+    return this.agent
+      .patch(url)
+      .set(CSRF_HEADER, this.csrf)
+      .send(body ?? {});
   }
 
   delete(url: string) {

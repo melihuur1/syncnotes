@@ -12,7 +12,11 @@ export class TicketError extends Error {}
  * The ticket only proves *identity* and *intent* (which note); authorisation is re-checked
  * against Postgres by the caller.
  */
-export function verifyTicket(token: string, secret: string, documentName: string): CollabTicketClaims {
+export function verifyTicket(
+  token: string,
+  secret: string,
+  documentName: string,
+): CollabTicketClaims {
   if (!token) throw new TicketError('missing ticket');
   let claims: jwt.JwtPayload & Partial<CollabTicketClaims>;
   try {
@@ -28,5 +32,9 @@ export function verifyTicket(token: string, secret: string, documentName: string
     throw new TicketError('malformed ticket');
   }
   if (claims.nid !== documentName) throw new TicketError('ticket issued for another document');
-  return { sub: claims.sub, nid: claims.nid, name: typeof claims.name === 'string' ? claims.name : 'Anonymous' };
+  return {
+    sub: claims.sub,
+    nid: claims.nid,
+    name: typeof claims.name === 'string' ? claims.name : 'Anonymous',
+  };
 }

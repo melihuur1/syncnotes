@@ -31,9 +31,13 @@ export function db(): PrismaClient {
 
 let publisher: Redis | undefined;
 /** Publishes an access event exactly like the API does. */
-export async function publishAccessEvent(event: Omit<AccessEvent, 'at'>): Promise<void> {
+type WithoutAt<T> = T extends unknown ? Omit<T, 'at'> : never;
+export async function publishAccessEvent(event: WithoutAt<AccessEvent>): Promise<void> {
   publisher ??= new Redis(process.env.REDIS_URL!);
-  await publisher.publish(ACCESS_EVENTS_CHANNEL, serializeAccessEvent({ ...event, at: Date.now() } as AccessEvent));
+  await publisher.publish(
+    ACCESS_EVENTS_CHANNEL,
+    serializeAccessEvent({ ...event, at: Date.now() } as AccessEvent),
+  );
 }
 
 export async function closeShared(): Promise<void> {
@@ -53,7 +57,9 @@ export interface RunningCollab extends CollabServer {
 }
 
 /** Fast timings so TTL/debounce behaviour is observable within a test. */
-export async function startCollab(overrides: Partial<Record<keyof CollabConfig, unknown>> = {}): Promise<RunningCollab> {
+export async function startCollab(
+  overrides: Partial<Record<keyof CollabConfig, unknown>> = {},
+): Promise<RunningCollab> {
   const config = loadCollabConfig({
     ...process.env,
     COLLAB_PORT: 0,
@@ -65,7 +71,9 @@ export async function startCollab(overrides: Partial<Record<keyof CollabConfig, 
     AUTO_VERSION_INTERVAL_MINUTES: 0,
     ...overrides,
   });
-  const logger = process.env.COLLAB_TEST_LOGS ? createLogger(config.INSTANCE_NAME, 'debug') : silentLogger;
+  const logger = process.env.COLLAB_TEST_LOGS
+    ? createLogger(config.INSTANCE_NAME, 'debug')
+    : silentLogger;
   const collab = createCollabServer(config, { logger, prisma: db() });
   const port = await collab.listen();
   return { ...collab, port, url: `ws://127.0.0.1:${port}` };
@@ -109,13 +117,21 @@ export async function createNote(): Promise<Fixture> {
   };
 }
 
-export function ticket(user: TestUser, noteId: string, options: { secret?: string; expiresIn?: number } = {}): string {
-  return jwt.sign({ sub: user.id, nid: noteId, name: user.name }, options.secret ?? process.env.COLLAB_TICKET_SECRET!, {
-    algorithm: 'HS256',
-    audience: COLLAB_TICKET_AUDIENCE,
-    issuer: COLLAB_TICKET_ISSUER,
-    expiresIn: options.expiresIn ?? 60,
-  });
+export function ticket(
+  user: TestUser,
+  noteId: string,
+  options: { secret?: string; expiresIn?: number } = {},
+): string {
+  return jwt.sign(
+    { sub: user.id, nid: noteId, name: user.name },
+    options.secret ?? process.env.COLLAB_TICKET_SECRET!,
+    {
+      algorithm: 'HS256',
+      audience: COLLAB_TICKET_AUDIENCE,
+      issuer: COLLAB_TICKET_ISSUER,
+      expiresIn: options.expiresIn ?? 60,
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -199,7 +215,6 @@ export async function waitFor(
   { timeout = 5000, interval = 20, message = 'condition not met' } = {},
 ): Promise<void> {
   const started = Date.now();
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     if (await condition()) return;
     if (Date.now() - started > timeout) throw new Error(`${message} (after ${timeout}ms)`);
@@ -211,7 +226,10 @@ export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Decodes the persisted Yjs state of a note. */
 export async function persistedDoc(noteId: string): Promise<Y.Doc> {
-  const note = await db().note.findUniqueOrThrow({ where: { id: noteId }, select: { ydocState: true } });
+  const note = await db().note.findUniqueOrThrow({
+    where: { id: noteId },
+    select: { ydocState: true },
+  });
   const doc = new Y.Doc();
   if (note.ydocState) Y.applyUpdate(doc, note.ydocState);
   return doc;

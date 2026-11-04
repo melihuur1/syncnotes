@@ -25,19 +25,33 @@ export class VersionsHandlerExtension implements Extension {
   extensionName = 'syncnotes-versions';
 
   constructor(
-    private readonly deps: { versions: VersionService; permissions: PermissionService; logger: Logger },
+    private readonly deps: {
+      versions: VersionService;
+      permissions: PermissionService;
+      logger: Logger;
+    },
   ) {}
 
-  async onStateless({ connection, document, documentName, payload }: onStatelessPayload): Promise<void> {
+  async onStateless({
+    connection,
+    document,
+    documentName,
+    payload,
+  }: onStatelessPayload): Promise<void> {
     const message = parseStatelessMessage<ClientStatelessMessage>(payload);
-    if (!message || (message.type !== 'version.create' && message.type !== 'version.restore')) return;
+    if (!message || (message.type !== 'version.create' && message.type !== 'version.restore'))
+      return;
 
     const ctx = contextOf(connection);
     if (!ctx) return;
     // Mutating commands always use a fresh role (no cache).
     const role = await this.deps.permissions.getRole(ctx.user.id, documentName, { fresh: true });
     if (!canEdit(role)) {
-      reply(connection, { type: 'error', code: 'forbidden', message: 'Only editors can manage versions' });
+      reply(connection, {
+        type: 'error',
+        code: 'forbidden',
+        message: 'Only editors can manage versions',
+      });
       return;
     }
 
@@ -48,7 +62,9 @@ export class VersionsHandlerExtension implements Extension {
           label: typeof message.label === 'string' ? message.label : null,
           userId: ctx.user.id,
         });
-        document.broadcastStateless(JSON.stringify({ type: 'versions.changed' } satisfies ServerStatelessMessage));
+        document.broadcastStateless(
+          JSON.stringify({ type: 'versions.changed' } satisfies ServerStatelessMessage),
+        );
         return;
       }
 
@@ -64,15 +80,27 @@ export class VersionsHandlerExtension implements Extension {
           by: ctx.user.name,
         } satisfies ServerStatelessMessage),
       );
-      document.broadcastStateless(JSON.stringify({ type: 'versions.changed' } satisfies ServerStatelessMessage));
-      this.deps.logger.info('version restored', { noteId: documentName, versionId: message.versionId });
+      document.broadcastStateless(
+        JSON.stringify({ type: 'versions.changed' } satisfies ServerStatelessMessage),
+      );
+      this.deps.logger.info('version restored', {
+        noteId: documentName,
+        versionId: message.versionId,
+      });
     } catch (err) {
       if (err instanceof VersionNotFoundError) {
         reply(connection, { type: 'error', code: 'not-found', message: 'Version not found' });
         return;
       }
-      this.deps.logger.error('version command failed', { noteId: documentName, error: (err as Error).message });
-      reply(connection, { type: 'error', code: 'internal', message: 'Could not complete the version command' });
+      this.deps.logger.error('version command failed', {
+        noteId: documentName,
+        error: (err as Error).message,
+      });
+      reply(connection, {
+        type: 'error',
+        code: 'internal',
+        message: 'Could not complete the version command',
+      });
     }
   }
 }

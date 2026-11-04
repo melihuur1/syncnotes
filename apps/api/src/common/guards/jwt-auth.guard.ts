@@ -52,12 +52,22 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     const activeSession = await this.prisma.db.session.findFirst({
-      where: { familyId: claims.sid, userId: claims.sub, revokedAt: null, expiresAt: { gt: new Date() } },
+      where: {
+        familyId: claims.sid,
+        userId: claims.sub,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+      },
       select: { id: true },
     });
     if (!activeSession) throw new UnauthorizedException('Session has been revoked');
 
-    req.user = { id: claims.sub, name: claims.name, email: claims.email, sessionFamilyId: claims.sid };
+    req.user = {
+      id: claims.sub,
+      name: claims.name,
+      email: claims.email,
+      sessionFamilyId: claims.sid,
+    };
     return true;
   }
 }

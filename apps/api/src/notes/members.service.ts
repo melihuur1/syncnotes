@@ -69,7 +69,8 @@ export class MembersService {
 
   async updateRole(noteId: string, userId: string, role: AssignableRole): Promise<MemberDto> {
     const existing = await this.findMembership(noteId, userId);
-    if (existing.role === 'OWNER') throw new BadRequestException("The owner's role cannot be changed");
+    if (existing.role === 'OWNER')
+      throw new BadRequestException("The owner's role cannot be changed");
 
     const member = await this.prisma.db.noteMember.update({
       where: { noteId_userId: { noteId, userId } },

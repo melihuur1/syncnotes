@@ -23,7 +23,7 @@ export const envSchema = z
     LOGIN_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
     LOGIN_LOCK_MINUTES: z.coerce.number().int().positive().default(15),
     THROTTLE_AUTH_LIMIT: z.coerce.number().int().positive().default(10),
-    THROTTLE_DEFAULT_LIMIT: z.coerce.number().int().positive().default(300),
+    THROTTLE_DEFAULT_LIMIT: z.coerce.number().int().positive().default(1000),
   })
   .refine((env) => env.JWT_ACCESS_SECRET !== env.COLLAB_TICKET_SECRET, {
     message: 'COLLAB_TICKET_SECRET must differ from JWT_ACCESS_SECRET',
@@ -37,7 +37,9 @@ export const APP_CONFIG = Symbol('APP_CONFIG');
 export function parseEnv(raw: Record<string, unknown>): AppConfig {
   const result = envSchema.safeParse(raw);
   if (!result.success) {
-    const issues = result.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
+    const issues = result.error.issues
+      .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
+      .join('\n');
     throw new Error(`Invalid environment configuration:\n${issues}`);
   }
   return result.data;

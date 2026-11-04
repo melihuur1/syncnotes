@@ -1,7 +1,14 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { cookieValue, createTestApp, getSetCookie, PASSWORD, resetDatabase, TestClient } from './utils';
+import {
+  cookieValue,
+  createTestApp,
+  getSetCookie,
+  PASSWORD,
+  resetDatabase,
+  TestClient,
+} from './utils';
 
 describe('Auth (integration)', () => {
   let app: INestApplication;
@@ -16,10 +23,18 @@ describe('Auth (integration)', () => {
     it('creates the account and sets hardened auth cookies', async () => {
       const client = await TestClient.create(app);
       const res = await client
-        .post('/api/auth/register', { email: '  Ada@Example.com ', name: 'Ada', password: PASSWORD })
+        .post('/api/auth/register', {
+          email: '  Ada@Example.com ',
+          name: 'Ada',
+          password: PASSWORD,
+        })
         .expect(201);
 
-      expect(res.body.user).toEqual({ id: expect.any(String), email: 'ada@example.com', name: 'Ada' });
+      expect(res.body.user).toEqual({
+        id: expect.any(String),
+        email: 'ada@example.com',
+        name: 'Ada',
+      });
       expect(JSON.stringify(res.body)).not.toContain('password');
 
       const access = getSetCookie(res, 'sn_access');
@@ -46,10 +61,19 @@ describe('Auth (integration)', () => {
 
     it('validates input and rejects unknown fields', async () => {
       const client = await TestClient.create(app);
-      await client.post('/api/auth/register', { email: 'nope', name: 'A', password: PASSWORD }).expect(400);
-      await client.post('/api/auth/register', { email: 'a@b.co', name: 'A', password: 'short' }).expect(400);
       await client
-        .post('/api/auth/register', { email: 'a@b.co', name: 'A', password: PASSWORD, isAdmin: true })
+        .post('/api/auth/register', { email: 'nope', name: 'A', password: PASSWORD })
+        .expect(400);
+      await client
+        .post('/api/auth/register', { email: 'a@b.co', name: 'A', password: 'short' })
+        .expect(400);
+      await client
+        .post('/api/auth/register', {
+          email: 'a@b.co',
+          name: 'A',
+          password: PASSWORD,
+          isAdmin: true,
+        })
         .expect(400);
     });
   });
@@ -59,7 +83,11 @@ describe('Auth (integration)', () => {
       const client = await TestClient.create(app);
       const body = { email: 'x@example.com', name: 'X', password: PASSWORD };
       await client.agent.post('/api/auth/register').send(body).expect(403);
-      await client.agent.post('/api/auth/register').set('x-csrf-token', 'a'.repeat(32)).send(body).expect(403);
+      await client.agent
+        .post('/api/auth/register')
+        .set('x-csrf-token', 'a'.repeat(32))
+        .send(body)
+        .expect(403);
       await request(app.getHttpServer()).post('/api/auth/login').send(body).expect(403);
     });
   });
@@ -81,15 +109,24 @@ describe('Auth (integration)', () => {
       const ada = await TestClient.registered(app, 'Ada');
       const client = await TestClient.create(app);
       for (let i = 0; i < 5; i++) {
-        await client.post('/api/auth/login', { email: ada.user.email, password: 'wrong' }).expect(401);
+        await client
+          .post('/api/auth/login', { email: ada.user.email, password: 'wrong' })
+          .expect(401);
       }
-      await client.post('/api/auth/login', { email: ada.user.email, password: PASSWORD }).expect(429);
+      await client
+        .post('/api/auth/login', { email: ada.user.email, password: PASSWORD })
+        .expect(429);
 
       // Lock expires → login works again and the counter resets.
       await app
         .get(PrismaService)
-        .db.user.update({ where: { id: ada.user.id }, data: { lockedUntil: new Date(Date.now() - 1000) } });
-      await client.post('/api/auth/login', { email: ada.user.email, password: PASSWORD }).expect(200);
+        .db.user.update({
+          where: { id: ada.user.id },
+          data: { lockedUntil: new Date(Date.now() - 1000) },
+        });
+      await client
+        .post('/api/auth/login', { email: ada.user.email, password: PASSWORD })
+        .expect(200);
     });
   });
 

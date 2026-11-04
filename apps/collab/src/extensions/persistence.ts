@@ -1,8 +1,4 @@
-import type {
-  Extension,
-  onLoadDocumentPayload,
-  onStoreDocumentPayload,
-} from '@hocuspocus/server';
+import type { Extension, onLoadDocumentPayload, onStoreDocumentPayload } from '@hocuspocus/server';
 import type { Prisma, PrismaClient } from '@syncnotes/db';
 import * as Y from 'yjs';
 import { ORIGINS } from '../context';
@@ -46,7 +42,11 @@ export class PersistenceExtension implements Extension {
     this.options.tracker.set(documentName, note.contentUpdatedAt?.getTime() ?? 0);
   }
 
-  async onStoreDocument({ documentName, document, lastContext }: onStoreDocumentPayload): Promise<void> {
+  async onStoreDocument({
+    documentName,
+    document,
+    lastContext,
+  }: onStoreDocumentPayload): Promise<void> {
     const { prisma, tracker, logger } = this.options;
     const started = Date.now();
 
@@ -75,7 +75,14 @@ export class PersistenceExtension implements Extension {
           },
         });
 
-        await this.maybeAutoVersion(tx, documentName, document, row.created_at, plainText, lastContext);
+        await this.maybeAutoVersion(
+          tx,
+          documentName,
+          document,
+          row.created_at,
+          plainText,
+          lastContext,
+        );
         return { bytes: state.byteLength, at: now.getTime() };
       },
       { timeout: 15_000 },
@@ -86,7 +93,11 @@ export class PersistenceExtension implements Extension {
       return;
     }
     tracker.set(documentName, result.at);
-    logger.debug('stored document', { noteId: documentName, bytes: result.bytes, ms: Date.now() - started });
+    logger.debug('stored document', {
+      noteId: documentName,
+      bytes: result.bytes,
+      ms: Date.now() - started,
+    });
   }
 
   private async maybeAutoVersion(

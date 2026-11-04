@@ -52,8 +52,14 @@ describe('WebSocket handshake authorisation', () => {
   });
 
   it.each([
-    ['a forged signature', (u: { id: string; name: string }, n: string) => ticket(u, n, { secret: 'x'.repeat(40) })],
-    ['an expired ticket', (u: { id: string; name: string }, n: string) => ticket(u, n, { expiresIn: -10 })],
+    [
+      'a forged signature',
+      (u: { id: string; name: string }, n: string) => ticket(u, n, { secret: 'x'.repeat(40) }),
+    ],
+    [
+      'an expired ticket',
+      (u: { id: string; name: string }, n: string) => ticket(u, n, { expiresIn: -10 }),
+    ],
     ['garbage', () => 'not-a-jwt'],
     ['an empty token', () => ''],
   ])('rejects %s', async (_label, makeToken) => {
@@ -76,7 +82,9 @@ describe('WebSocket handshake authorisation', () => {
     const note = await createNote();
     const editor = await note.member('EDITOR');
     const stillValidTicket = ticket(editor, note.noteId);
-    await db().noteMember.delete({ where: { noteId_userId: { noteId: note.noteId, userId: editor.id } } });
+    await db().noteMember.delete({
+      where: { noteId_userId: { noteId: note.noteId, userId: editor.id } },
+    });
 
     const client = open(collab, note.noteId, stillValidTicket);
     await waitFor(() => client.authFailures.length > 0);

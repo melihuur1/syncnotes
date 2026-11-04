@@ -71,9 +71,14 @@ describe('version history', () => {
     e.send({ type: 'version.restore', versionId: v1!.id });
 
     for (const client of [owner, e]) {
-      await waitFor(() => client.text() === 'version one' && client.doc.getText('title').toString() === 'Plan A');
+      await waitFor(
+        () =>
+          client.text() === 'version one' && client.doc.getText('title').toString() === 'Plan A',
+      );
     }
-    await waitFor(() => owner.stateless.some((m) => m.type === 'version.restored' && m.by === 'Editor'));
+    await waitFor(() =>
+      owner.stateless.some((m) => m.type === 'version.restored' && m.by === 'Editor'),
+    );
 
     // The pre-restore state was kept, so the restore itself can be undone.
     const versions = await versionsOf(note.noteId);

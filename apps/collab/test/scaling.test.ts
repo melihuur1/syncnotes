@@ -74,7 +74,10 @@ describe('horizontal scaling through Redis', () => {
       if (i % 4 === 0) await sleep(30);
     }
     const count = (t: string, c: string) => t.split(c).length - 1;
-    await waitFor(() => onA.text() === onB.text() && count(onA.text(), 'a') === 20 && count(onA.text(), 'b') === 20);
+    await waitFor(
+      () =>
+        onA.text() === onB.text() && count(onA.text(), 'a') === 20 && count(onA.text(), 'b') === 20,
+    );
     await Promise.all([flush(a), flush(b)]);
     expect(bodyText(await persistedDoc(note.noteId))).toBe(onA.text());
   });
@@ -100,11 +103,13 @@ describe('horizontal scaling through Redis', () => {
     }
 
     it('keeps same-instance collaboration and persistence working while Redis is down', async () => {
-      const { proxy, a, note, a1, a2, b1 } = await outageSetup();
+      const { proxy, a, note, a1, a2 } = await outageSetup();
 
       await proxy.cut();
       await waitFor(() => !a.redis.isHealthy(), { message: 'instance did not notice the outage' });
-      const health = await (await fetch(`http://127.0.0.1:${a.port}/health`)).json();
+      const health = (await (await fetch(`http://127.0.0.1:${a.port}/health`)).json()) as {
+        redis: string;
+      };
       expect(health.redis).toBe('degraded');
 
       // Real-time collaboration on the same instance is unaffected.
@@ -148,7 +153,12 @@ describe('horizontal scaling through Redis', () => {
 
       await Promise.all([flush(a), flush(b)]);
       const persisted = bodyText(await persistedDoc(note.noteId));
-      for (const fragment of ['base', '[A during outage]', '[B during outage]', '[after recovery]']) {
+      for (const fragment of [
+        'base',
+        '[A during outage]',
+        '[B during outage]',
+        '[after recovery]',
+      ]) {
         expect(persisted).toContain(fragment);
       }
       expect(bodyText(serverDoc(a, note.noteId)!)).toBe(bodyText(serverDoc(b, note.noteId)!));
@@ -160,9 +170,15 @@ describe('horizontal scaling through Redis', () => {
       await waitFor(() => !a.redis.isHealthy());
 
       // The API could not publish the event — only Postgres knows.
-      const e1 = (await db().noteMember.findMany({ where: { noteId: note.noteId, role: 'EDITOR' }, include: { user: true } }))
-        .find((m) => m.user.name === 'E1')!;
-      await db().noteMember.delete({ where: { noteId_userId: { noteId: note.noteId, userId: e1.userId } } });
+      const e1 = (
+        await db().noteMember.findMany({
+          where: { noteId: note.noteId, role: 'EDITOR' },
+          include: { user: true },
+        })
+      ).find((m) => m.user.name === 'E1')!;
+      await db().noteMember.delete({
+        where: { noteId_userId: { noteId: note.noteId, userId: e1.userId } },
+      });
       await sleep(400); // > PERMISSION_CACHE_TTL_MS (300ms in tests)
 
       a2.type(' revoked-edit');

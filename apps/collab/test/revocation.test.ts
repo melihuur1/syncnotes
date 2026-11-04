@@ -43,7 +43,9 @@ describe('access changes on live WebSocket sessions', () => {
     e.type('before');
     await waitFor(() => owner.text() === 'before');
 
-    await db().noteMember.delete({ where: { noteId_userId: { noteId: note.noteId, userId: editor.id } } });
+    await db().noteMember.delete({
+      where: { noteId_userId: { noteId: note.noteId, userId: editor.id } },
+    });
     await publishAccessEvent({ type: 'member.removed', noteId: note.noteId, userId: editor.id });
 
     await waitFor(() => e.stateless.some((m) => m.type === 'access.revoked'), { timeout: 1000 });
@@ -64,7 +66,9 @@ describe('access changes on live WebSocket sessions', () => {
     await waitFor(() => owner.text() === 'ok');
 
     // Membership removed in Postgres, but *no* event published.
-    await db().noteMember.delete({ where: { noteId_userId: { noteId: note.noteId, userId: editor.id } } });
+    await db().noteMember.delete({
+      where: { noteId_userId: { noteId: note.noteId, userId: editor.id } },
+    });
     await sleep(500); // > PERMISSION_CACHE_TTL_MS
 
     e.type(' sneaky');
@@ -85,7 +89,9 @@ describe('access changes on live WebSocket sessions', () => {
     const e = await open(collab, note.noteId, ticket(editor, note.noteId));
 
     await setRole(note.noteId, editor.id, 'VIEWER');
-    await waitFor(() => e.stateless.some((m) => m.type === 'access.changed' && m.role === 'VIEWER'));
+    await waitFor(() =>
+      e.stateless.some((m) => m.type === 'access.changed' && m.role === 'VIEWER'),
+    );
 
     e.type('ignored');
     await sleep(300);
@@ -99,7 +105,9 @@ describe('access changes on live WebSocket sessions', () => {
     const v = await open(collab, note.noteId, ticket(viewer, note.noteId));
 
     await setRole(note.noteId, viewer.id, 'EDITOR');
-    await waitFor(() => v.stateless.some((m) => m.type === 'access.changed' && m.role === 'EDITOR'));
+    await waitFor(() =>
+      v.stateless.some((m) => m.type === 'access.changed' && m.role === 'EDITOR'),
+    );
 
     v.type('now I can edit');
     await waitFor(() => owner.text() === 'now I can edit');
@@ -119,7 +127,9 @@ describe('access changes on live WebSocket sessions', () => {
     stale.type('rejected');
     await sleep(200);
     await setRole(note.noteId, editor.id, 'EDITOR');
-    await waitFor(() => stale.stateless.some((m) => m.type === 'access.changed' && m.role === 'EDITOR'));
+    await waitFor(() =>
+      stale.stateless.some((m) => m.type === 'access.changed' && m.role === 'EDITOR'),
+    );
 
     stale.type(' + depends on rejected');
     await sleep(300);

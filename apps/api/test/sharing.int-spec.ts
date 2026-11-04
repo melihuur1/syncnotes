@@ -48,7 +48,9 @@ describe('Sharing, roles & collaboration tickets (integration)', () => {
     await editor
       .post(`/api/notes/${noteId}/members`, { email: stranger.user.email, role: 'VIEWER' })
       .expect(403);
-    await viewer.patch(`/api/notes/${noteId}/members/${editor.user.id}`, { role: 'VIEWER' }).expect(403);
+    await viewer
+      .patch(`/api/notes/${noteId}/members/${editor.user.id}`, { role: 'VIEWER' })
+      .expect(403);
     await editor.delete(`/api/notes/${noteId}/members/${viewer.user.id}`).expect(403);
     // Only the owner deletes.
     await viewer.delete(`/api/notes/${noteId}`).expect(403);
@@ -65,7 +67,9 @@ describe('Sharing, roles & collaboration tickets (integration)', () => {
   });
 
   it('protects the owner membership', async () => {
-    await owner.patch(`/api/notes/${noteId}/members/${owner.user.id}`, { role: 'VIEWER' }).expect(400);
+    await owner
+      .patch(`/api/notes/${noteId}/members/${owner.user.id}`, { role: 'VIEWER' })
+      .expect(400);
     await owner.delete(`/api/notes/${noteId}/members/${owner.user.id}`).expect(400);
     await owner.post(`/api/notes/${noteId}/leave`).expect(400);
   });
@@ -81,7 +85,9 @@ describe('Sharing, roles & collaboration tickets (integration)', () => {
   });
 
   it('publishes role changes so live sessions are downgraded', async () => {
-    await owner.patch(`/api/notes/${noteId}/members/${editor.user.id}`, { role: 'VIEWER' }).expect(200);
+    await owner
+      .patch(`/api/notes/${noteId}/members/${editor.user.id}`, { role: 'VIEWER' })
+      .expect(200);
     await recorder.waitFor(
       (e) =>
         e.type === 'member.updated' &&
@@ -136,12 +142,22 @@ describe('Sharing, roles & collaboration tickets (integration)', () => {
       const prisma = app.get(PrismaService).db;
       const state = Uint8Array.from([1, 2, 3, 4]);
       const version = await prisma.noteVersion.create({
-        data: { noteId, state, sizeBytes: state.byteLength, label: 'v1', createdById: editor.user.id },
+        data: {
+          noteId,
+          state,
+          sizeBytes: state.byteLength,
+          label: 'v1',
+          createdById: editor.user.id,
+        },
       });
 
       const list = await viewer.get(`/api/notes/${noteId}/versions`).expect(200);
       expect(list.body).toEqual([
-        expect.objectContaining({ id: version.id, label: 'v1', createdBy: { id: editor.user.id, name: 'Editor' } }),
+        expect.objectContaining({
+          id: version.id,
+          label: 'v1',
+          createdBy: { id: editor.user.id, name: 'Editor' },
+        }),
       ]);
       expect(list.body[0].state).toBeUndefined();
 

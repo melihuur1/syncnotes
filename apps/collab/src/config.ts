@@ -17,7 +17,11 @@ export const collabEnvSchema = z.object({
   AUTO_VERSION_KEEP: z.coerce.number().int().positive().default(50),
   /** How often open documents are reconciled through Postgres while Redis is unavailable. */
   DEGRADED_RECONCILE_INTERVAL_MS: z.coerce.number().int().positive().default(3000),
-  MAX_MESSAGE_BYTES: z.coerce.number().int().positive().default(8 * 1024 * 1024),
+  MAX_MESSAGE_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(8 * 1024 * 1024),
 });
 
 export type CollabConfig = z.infer<typeof collabEnvSchema>;
@@ -25,7 +29,9 @@ export type CollabConfig = z.infer<typeof collabEnvSchema>;
 export function loadCollabConfig(env: Record<string, unknown> = process.env): CollabConfig {
   const result = collabEnvSchema.safeParse(env);
   if (!result.success) {
-    const issues = result.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
+    const issues = result.error.issues
+      .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
+      .join('\n');
     throw new Error(`Invalid collaboration server configuration:\n${issues}`);
   }
   return result.data;

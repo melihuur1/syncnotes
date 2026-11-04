@@ -83,7 +83,10 @@ describe('persistence & offline editing', () => {
     const p = new Y.XmlElement('paragraph');
     p.insert(0, [new Y.XmlText('edit from another instance')]);
     other.getXmlFragment('default').push([p]);
-    await db().note.update({ where: { id: note.noteId }, data: { ydocState: new Uint8Array(Y.encodeStateAsUpdate(other)) } });
+    await db().note.update({
+      where: { id: note.noteId },
+      data: { ydocState: new Uint8Array(Y.encodeStateAsUpdate(other)) },
+    });
 
     // Next store on this instance must keep both — and pull the other edit into the live doc.
     client.type('!');

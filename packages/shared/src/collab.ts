@@ -30,8 +30,7 @@ export const COLLAB_CLOSE = {
 
 /** Client → server stateless messages (sent over the authenticated document connection). */
 export type ClientStatelessMessage =
-  | { type: 'version.create'; label?: string }
-  | { type: 'version.restore'; versionId: string };
+  { type: 'version.create'; label?: string } | { type: 'version.restore'; versionId: string };
 
 /** Server → client stateless messages. */
 export type ServerStatelessMessage =

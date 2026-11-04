@@ -100,7 +100,11 @@ export class NotesService {
   }
 
   /** Folder placement is per user, so any member (even a viewer) may file a note. */
-  async moveToFolder(userId: string, noteId: string, folderId: string | null): Promise<NoteSummaryDto> {
+  async moveToFolder(
+    userId: string,
+    noteId: string,
+    folderId: string | null,
+  ): Promise<NoteSummaryDto> {
     if (folderId) await this.folders.assertOwned(userId, folderId);
     const membership = await this.prisma.db.noteMember.update({
       where: { noteId_userId: { noteId, userId } },
